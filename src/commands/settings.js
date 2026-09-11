@@ -10,11 +10,11 @@ export const commands = [
     .setDescription('Bot settings')
     .addSubcommand(s => s.setName('view').setDescription('Show settings'))
     .addSubcommand(s => s.setName('turbo').setDescription('Default turbo mode')
-      .addBooleanOption(o => o.setName('enabled').setRequired(true)))
+      .addBooleanOption(o => o.setName('enabled').setDescription('Enable turbo').setRequired(true)))
     .addSubcommand(s => s.setName('claim').setDescription('Auto-claim rewards')
-      .addBooleanOption(o => o.setName('enabled').setRequired(true)))
+      .addBooleanOption(o => o.setName('enabled').setDescription('Auto-claim on').setRequired(true)))
     .addSubcommand(s => s.setName('enroll').setDescription('Auto-enroll quests')
-      .addBooleanOption(o => o.setName('enabled').setRequired(true))),
+      .addBooleanOption(o => o.setName('enabled').setDescription('Auto-enroll on').setRequired(true))),
 ];
 
 export const handlers = {
