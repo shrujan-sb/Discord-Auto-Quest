@@ -5,6 +5,7 @@ import {
 } from '../database/sqlite.js';
 import { successEmbed, errorEmbed, warnEmbed, E } from '../utils/embeds.js';
 import { maskToken } from '../utils/crypto.js';
+import { withBrand } from '../utils/reply.js';
 
 export const commands = [
   new SlashCommandBuilder()
@@ -43,16 +44,23 @@ export const handlers = {
         const user = await api.getCurrentUser();
         saveToken(userId, label, token, { id: user.id, username: user.global_name || user.username });
 
-        return interaction.editReply({
+        return interaction.editReply(withBrand({
           embeds: [successEmbed(
             'Token Threaded',
-            `${E.check()} Account **${user.global_name || user.username}** is now woven in as \`${label}\`.\n\n${E.warn()} Your token is encrypted locally in SQLite — never shared, never logged.`,
+            [
+              `${E.check()} Account **${user.global_name || user.username}** is now woven in.`,
+              '',
+              `**Label:** \`${label}\``,
+              `**ID:** \`${user.id}\``,
+              '',
+              `${E.warn()} Encrypted locally in SQLite — never shared, never logged.`,
+            ].join('\n'),
           )],
-        });
+        }));
       } catch {
-        return interaction.editReply({
+        return interaction.editReply(withBrand({
           embeds: [errorEmbed('Thread Failed', 'That token didn\'t authenticate. Double-check you copied the full token.')],
-        });
+        }));
       }
     }
 
@@ -62,7 +70,7 @@ export const handlers = {
       const embed = removed
         ? successEmbed('Token Cut', `${E.check()} \`${label}\` has been removed from the web.`)
         : warnEmbed('Not Found', `No token labeled \`${label}\` exists.`);
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply(withBrand({ embeds: [embed], ephemeral: true }));
     }
 
     if (sub === 'verify') {
@@ -71,9 +79,9 @@ export const handlers = {
       const token = getDecryptedToken(userId, label);
 
       if (!token) {
-        return interaction.editReply({
+        return interaction.editReply(withBrand({
           embeds: [warnEmbed('No Token', `Nothing labeled \`${label}\`. Use \`/thread-token add\` first.`)],
-        });
+        }));
       }
 
       try {
@@ -82,36 +90,40 @@ export const handlers = {
         const quests = await api.getQuests();
         const active = quests.filter(q => !q.user_status?.completed_at).length;
 
-        return interaction.editReply({
+        return interaction.editReply(withBrand({
           embeds: [successEmbed(
             'Token Alive',
-            `${E.check()} **${user.global_name || user.username}** is responsive.\n${E.orb()} ${active} incomplete quest${active === 1 ? '' : 's'} detected.\n\`${maskToken(token)}\``,
+            [
+              `${E.check()} **${user.global_name || user.username}** is responsive`,
+              `${E.orb()} **${active}** incomplete quest${active === 1 ? '' : 's'}`,
+              `${E.key()} \`${maskToken(token)}\``,
+            ].join('\n'),
           )],
-        });
+        }));
       } catch {
-        return interaction.editReply({
+        return interaction.editReply(withBrand({
           embeds: [errorEmbed('Token Dead', 'This token is invalid or expired. Re-thread a fresh one.')],
-        });
+        }));
       }
     }
 
     if (sub === 'list') {
       const tokens = listTokens(userId);
       if (!tokens.length) {
-        return interaction.reply({
+        return interaction.reply(withBrand({
           embeds: [warnEmbed('Empty Web', 'No tokens saved yet. Run `/thread-token add` to get started.')],
           ephemeral: true,
-        });
+        }));
       }
 
       const lines = tokens.map((t, i) =>
-        `**${i + 1}.** \`${t.label}\` — ${t.discord_username || 'unknown'} · _added ${t.created_at}_`,
+        `**${i + 1}.** \`${t.label}\` — **${t.discord_username || 'unknown'}**\n└ _added ${t.created_at}_`,
       );
 
-      return interaction.reply({
-        embeds: [successEmbed('Your Threaded Tokens', lines.join('\n'))],
+      return interaction.reply(withBrand({
+        embeds: [successEmbed('Your Threaded Tokens', lines.join('\n\n'))],
         ephemeral: true,
-      });
+      }));
     }
   },
 };

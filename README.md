@@ -77,14 +77,15 @@ npm run upload-emojis
 
 This uploads them to your bot application and saves IDs to `data/emoji-map.json`. Run once after setup.
 
-### 5. Deploy commands & start
+### 5. Start the bot
 
 ```bash
-npm run deploy
 npm run dev
 ```
 
-That's it. Orbweaver is live with custom emoji UI.
+Slash commands auto-register on startup. For instant command availability, set `DISCORD_GUILD_ID` in `.env` (your server ID).
+
+> Optional: `npm run deploy` registers commands without starting the bot.
 
 ## Commands
 
@@ -121,7 +122,8 @@ That's it. Orbweaver is live with custom emoji UI.
 ### Help
 | Command | Description |
 |---------|-------------|
-| `/oracle` | Full command reference |
+| `/help` | Full command reference & quick-start |
+| `/oracle` | Alias for `/help` |
 
 ## How to get your Discord token
 

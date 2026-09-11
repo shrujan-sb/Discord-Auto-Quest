@@ -81,6 +81,7 @@ export const E = {
   loot: () => e('loot'),
   radar: () => e('radar'),
   skull: () => e('skull'),
+  video: () => e('clapper'),
 };
 
 export function taskIcon(type) {

@@ -6,12 +6,16 @@ const { brand } = config;
 
 export { E };
 
+function authorIcon() {
+  return eUrl('spider') || 'attachment://orbweaver-logo.png';
+}
+
 export function baseEmbed(title, description) {
   return new EmbedBuilder()
     .setColor(brand.color)
     .setAuthor({
       name: brand.name,
-      iconURL: eUrl('spider') || 'attachment://orbweaver-logo.png',
+      iconURL: authorIcon(),
     })
     .setTitle(`${E.spider()} ${title}`)
     .setDescription(description)
@@ -94,20 +98,23 @@ export function buildRunStatusEmbed(runState) {
   return embed;
 }
 
+function btn(customId, label, style) {
+  const b = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
+  return b;
+}
+
 export function helpButtons() {
-  const keyBtn = new ButtonBuilder()
-    .setCustomId('help_tokens')
-    .setLabel('Token Guide')
-    .setStyle(ButtonStyle.Secondary);
+  const keyBtn = btn('help_tokens', 'Token Guide', ButtonStyle.Secondary);
   const keyEmoji = eObj('key');
   if (keyEmoji) keyBtn.setEmoji(keyEmoji);
 
-  const modeBtn = new ButtonBuilder()
-    .setCustomId('help_modes')
-    .setLabel('Run Modes')
-    .setStyle(ButtonStyle.Primary);
+  const modeBtn = btn('help_modes', 'Run Modes', ButtonStyle.Primary);
   const boltEmoji = eObj('bolt');
   if (boltEmoji) modeBtn.setEmoji(boltEmoji);
+
+  const allBtn = btn('help_all', 'Full Guide', ButtonStyle.Success);
+  const webEmoji = eObj('spider-web');
+  if (webEmoji) allBtn.setEmoji(webEmoji);
 
   const ghBtn = new ButtonBuilder()
     .setLabel('GitHub')
@@ -116,5 +123,5 @@ export function helpButtons() {
   const pkgEmoji = eObj('package');
   if (pkgEmoji) ghBtn.setEmoji(pkgEmoji);
 
-  return new ActionRowBuilder().addComponents(keyBtn, modeBtn, ghBtn);
+  return new ActionRowBuilder().addComponents(keyBtn, modeBtn, allBtn, ghBtn);
 }

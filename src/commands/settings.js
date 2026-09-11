@@ -1,6 +1,9 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { getSettings, saveSettings } from '../database/sqlite.js';
-import { successEmbed, E } from '../utils/embeds.js';
+import { successEmbed, E, progressBar } from '../utils/embeds.js';
+import { withBrand } from '../utils/reply.js';
+
+const onOff = (v) => v ? `${E.check()} **ON**` : `${E.cross()} **OFF**`;
 
 export const commands = [
   new SlashCommandBuilder()
@@ -30,15 +33,19 @@ export const handlers = {
 
     if (sub === 'view') {
       const s = getSettings(userId);
-      return interaction.reply({
+      return interaction.reply(withBrand({
         embeds: [successEmbed('Loom Config', [
-          `${E.rocket()} **Turbo Mode:** ${s.turbo_mode ? 'ON' : 'OFF'}`,
-          `${E.gem()} **Auto-Claim:** ${s.auto_claim ? 'ON' : 'OFF'}`,
-          `${E.spark()} **Auto-Enroll:** ${s.auto_enroll ? 'ON' : 'OFF'}`,
-          `${E.bolt()} **Default Mode:** \`${s.default_mode}\``,
+          'Your weaving preferences:',
+          '',
+          `${E.rocket()} Turbo Mode · ${onOff(s.turbo_mode)}`,
+          `${E.loot()} Auto-Claim · ${onOff(s.auto_claim)}`,
+          `${E.spark()} Auto-Enroll · ${onOff(s.auto_enroll)}`,
+          `${E.bolt()} Default Mode · \`${s.default_mode}\``,
+          '',
+          `${progressBar(75)} _loom calibrated_`,
         ].join('\n'))],
         ephemeral: true,
-      });
+      }));
     }
 
     const enabled = interaction.options.getBoolean('enabled');
@@ -48,9 +55,9 @@ export const handlers = {
 
     saveSettings(userId, { [key]: enabled ? 1 : 0 });
 
-    return interaction.reply({
+    return interaction.reply(withBrand({
       embeds: [successEmbed('Updated', `${E.check()} **${sub}** is now **${enabled ? 'ON' : 'OFF'}**.`)],
       ephemeral: true,
-    });
+    }));
   },
 };

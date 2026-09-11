@@ -1,18 +1,13 @@
-import { SlashCommandBuilder, AttachmentBuilder } from 'discord.js';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { SlashCommandBuilder } from 'discord.js';
+import { withBrand } from '../utils/reply.js';
 import { getDecryptedToken, getSettings, logQuest } from '../database/sqlite.js';
 import { QuestEngine, getRunState, abortRun } from '../engine/quest-engine.js';
 import { parseQuest, filterActiveQuests } from '../engine/quest-parser.js';
 import { DiscordUserAPI } from '../engine/discord-api.js';
 import {
-  baseEmbed, successEmbed, errorEmbed, warnEmbed,
-  buildQuestListEmbed, buildRunStatusEmbed, E, formatDuration,
+  baseEmbed, successEmbed, warnEmbed,
+  buildQuestListEmbed, buildRunStatusEmbed, E, formatDuration, progressBar,
 } from '../utils/embeds.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const logoPath = join(__dirname, '../../assets/orbweaver-logo.png');
-const logo = () => new AttachmentBuilder(logoPath, { name: 'orbweaver-logo.png' });
 
 async function getTokenAndSettings(interaction, label = 'default') {
   const userId = interaction.user.id;
@@ -27,17 +22,15 @@ async function runQuestMode(interaction, mode, options = {}) {
   const ctx = await getTokenAndSettings(interaction, label);
 
   if (ctx.error) {
-    return interaction.editReply({
+    return interaction.editReply(withBrand({
       embeds: [warnEmbed('No Token', 'Thread a token first with `/thread-token add`.')],
-      files: [logo()],
-    });
+    }));
   }
 
   if (getRunState(ctx.userId)) {
-    return interaction.editReply({
+    return interaction.editReply(withBrand({
       embeds: [warnEmbed('Already Weaving', 'A run is in progress. Use `/pulse` to watch or `/abort` to stop.')],
-      files: [logo()],
-    });
+    }));
   }
 
   const api = new DiscordUserAPI(ctx.token);
@@ -45,10 +38,9 @@ async function runQuestMode(interaction, mode, options = {}) {
   const quests = filterActiveQuests(raw.map(parseQuest).filter(Boolean));
 
   if (!quests.length) {
-    return interaction.editReply({
+    return interaction.editReply(withBrand({
       embeds: [baseEmbed('Clear Skies', `${E.spark()} No incomplete quests to weave right now.`)],
-      files: [logo()],
-    });
+    }));
   }
 
   const turbo = options.turbo ?? !!ctx.settings.turbo_mode;
@@ -60,10 +52,9 @@ async function runQuestMode(interaction, mode, options = {}) {
     sort: options.sort || 'default',
     onProgress: async (tasks) => {
       try {
-        await interaction.editReply({
+        await interaction.editReply(withBrand({
           embeds: [buildRunStatusEmbed({ tasks, message: `${E.bolt()} Weaving in ${mode} mode…`, done: false })],
-          files: [logo()],
-        });
+        }));
       } catch { /* interaction may have expired */ }
     },
   });
@@ -76,10 +67,9 @@ async function runQuestMode(interaction, mode, options = {}) {
     turbo: `${E.rocket()} Turbo — lightspeed completion`,
   };
 
-  await interaction.editReply({
+  await interaction.editReply(withBrand({
     embeds: [baseEmbed('Weaving Started', `${modeLabels[mode] || mode}\n\n${E.spider()} Processing **${quests.length}** quest${quests.length === 1 ? '' : 's'}…`)],
-    files: [logo()],
-  });
+  }));
 
   const result = await engine.run(quests, ctx.userId);
 
@@ -105,10 +95,7 @@ async function runQuestMode(interaction, mode, options = {}) {
       : '',
   ].filter(Boolean).join('\n'));
 
-  return interaction.editReply({
-    embeds: [embed],
-    files: [logo()],
-  });
+  return interaction.editReply(withBrand({ embeds: [embed] }));
 }
 
 export const commands = [
@@ -168,17 +155,18 @@ export const handlers = {
     const label = interaction.options.getString('label') || 'default';
     const ctx = await getTokenAndSettings(interaction, label);
     if (ctx.error) {
-      return interaction.editReply({ embeds: [warnEmbed('No Token', 'Add one with `/thread-token add`.')], files: [logo()] });
+      return interaction.editReply(withBrand({
+        embeds: [warnEmbed('No Token', 'Add one with `/thread-token add`.')],
+      }));
     }
 
     const api = new DiscordUserAPI(ctx.token);
     const raw = await api.getQuests();
     const quests = raw.map(parseQuest).filter(Boolean).filter(q => !q.completed);
 
-    return interaction.editReply({
+    return interaction.editReply(withBrand({
       embeds: [buildQuestListEmbed(quests, 'Quest Radar')],
-      files: [logo()],
-    });
+    }));
   },
 
   inspect: async (interaction) => {
@@ -187,7 +175,9 @@ export const handlers = {
     const search = interaction.options.getString('name').toLowerCase();
     const ctx = await getTokenAndSettings(interaction, label);
     if (ctx.error) {
-      return interaction.editReply({ embeds: [warnEmbed('No Token', 'Add one first.')], files: [logo()] });
+      return interaction.editReply(withBrand({
+        embeds: [warnEmbed('No Token', 'Add one first.')],
+      }));
     }
 
     const api = new DiscordUserAPI(ctx.token);
@@ -195,22 +185,28 @@ export const handlers = {
     const quest = raw.map(parseQuest).find(q => q?.name?.toLowerCase().includes(search));
 
     if (!quest) {
-      return interaction.editReply({ embeds: [warnEmbed('Not Found', `No quest matching "${search}".`)], files: [logo()] });
+      return interaction.editReply(withBrand({
+        embeds: [warnEmbed('Not Found', `No quest matching "${search}".`)],
+      }));
     }
 
+    const pct = quest.taskInfo?.target
+      ? Math.min(100, Math.round((quest.progress / quest.taskInfo.target) * 100))
+      : 0;
+
     const embed = baseEmbed(`Inspect: ${quest.name}`, [
-      `**Game:** ${quest.gameTitle || 'N/A'}`,
-      `**Type:** \`${quest.taskInfo.type}\``,
-      `**Duration:** ${formatDuration(quest.taskInfo.target)}`,
-      `**Progress:** ${formatDuration(quest.progress)} / ${formatDuration(quest.taskInfo.target)}`,
-      `**Orbs:** ${quest.orbReward || 'N/A'}`,
-      `**Status:** ${quest.completed ? 'Completed' : quest.enrolled ? 'In Progress' : 'Not Enrolled'}`,
-      `**Automatable:** ${quest.automatable ? 'Yes' : 'No'}`,
+      `**Game** · ${quest.gameTitle || 'N/A'}`,
+      `**Type** · \`${quest.taskInfo.type}\``,
+      `**Duration** · ${formatDuration(quest.taskInfo.target)}`,
+      `**Progress** · ${progressBar(pct)} \`${pct}%\``,
+      `**Orbs** · ${quest.orbReward || 'N/A'}`,
+      `**Status** · ${quest.completed ? 'Completed' : quest.enrolled ? 'In Progress' : 'Not Enrolled'}`,
+      `**Automatable** · ${quest.automatable ? 'Yes' : 'No'}`,
     ].join('\n'));
 
     if (quest.colors?.primary) embed.setColor(parseInt(quest.colors.primary.replace('#', ''), 16));
 
-    return interaction.editReply({ embeds: [embed], files: [logo()] });
+    return interaction.editReply(withBrand({ embeds: [embed] }));
   },
 
   blaze: async (interaction) => {
@@ -241,19 +237,17 @@ export const handlers = {
   pulse: async (interaction) => {
     const state = getRunState(interaction.user.id);
     if (!state) {
-      return interaction.reply({
+      return interaction.reply(withBrand({
         embeds: [baseEmbed('Idle', `${E.clock()} No active weave. Start one with \`/blaze\` or \`/turbo\`.`)],
-        files: [logo()],
         ephemeral: true,
-      });
+      }));
     }
 
     const tasks = state.engine?.tasks || [];
-    return interaction.reply({
+    return interaction.reply(withBrand({
       embeds: [buildRunStatusEmbed({ tasks, message: `${E.bolt()} Weave in progress…`, done: false })],
-      files: [logo()],
       ephemeral: true,
-    });
+    }));
   },
 
   abort: async (interaction) => {
@@ -261,7 +255,7 @@ export const handlers = {
     const embed = stopped
       ? warnEmbed('Aborted', `${E.cross()} Weave stopped. Partial progress may remain.`)
       : baseEmbed('Nothing Running', 'No active weave to abort.');
-    return interaction.reply({ embeds: [embed], files: [logo()], ephemeral: true });
+    return interaction.reply(withBrand({ embeds: [embed], ephemeral: true }));
   },
 
   'claim-loot': async (interaction) => {
@@ -269,7 +263,9 @@ export const handlers = {
     const label = interaction.options.getString('label') || 'default';
     const ctx = await getTokenAndSettings(interaction, label);
     if (ctx.error) {
-      return interaction.editReply({ embeds: [warnEmbed('No Token', 'Add one first.')], files: [logo()] });
+      return interaction.editReply(withBrand({
+        embeds: [warnEmbed('No Token', 'Add one first.')],
+      }));
     }
 
     const api = new DiscordUserAPI(ctx.token);
@@ -279,10 +275,9 @@ export const handlers = {
     );
 
     if (!claimable.length) {
-      return interaction.editReply({
+      return interaction.editReply(withBrand({
         embeds: [baseEmbed('No Loot', 'Nothing to claim right now.')],
-        files: [logo()],
-      });
+      }));
     }
 
     let claimed = 0;
@@ -293,9 +288,8 @@ export const handlers = {
       } catch { /* captcha or error */ }
     }
 
-    return interaction.editReply({
-      embeds: [successEmbed('Loot Claimed', `${E.gem()} Claimed **${claimed}** of **${claimable.length}** rewards.`)],
-      files: [logo()],
-    });
+    return interaction.editReply(withBrand({
+      embeds: [successEmbed('Loot Claimed', `${E.loot()} Claimed **${claimed}** of **${claimable.length}** rewards.`)],
+    }));
   },
 };
