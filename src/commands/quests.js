@@ -33,7 +33,7 @@ async function runMode(ix, opts = {}) {
 
   const quests = filterRunnableQuests(await fetchParsed(c.token));
   if (!quests.length) {
-    return ix.editReply({ embeds: [warn('No Quests', 'Accept a quest in Discord first, then retry.')] });
+    return ix.editReply({ embeds: [warn('No Quests', 'No active quests are available on this account right now.')] });
   }
 
   const engine = new QuestEngine(c.token, {
@@ -46,7 +46,11 @@ async function runMode(ix, opts = {}) {
     },
   });
 
-  await ix.editReply({ embeds: [ui('Started', `${E.fire()} Running **${quests.length}** quest(s)…`, 0x5865f2)] });
+  const pending = quests.filter(q => !q.enrolled).length;
+  await ix.editReply({
+    embeds: [ui('Started', `${E.fire()} Running **${quests.length}** quest(s)`
+      + `${pending ? ` · auto-accepting **${pending}**` : ''}…`, 0x5865f2)],
+  });
 
   const result = await engine.run(quests, c.userId);
   for (const q of result.completed) logQuest(c.userId, q.id, q.name, 'done', '');
@@ -54,8 +58,15 @@ async function runMode(ix, opts = {}) {
 
   const lines = [
     result.message,
+    result.accepted.length ? `\n${E.key()} Auto-accepted **${result.accepted.length}**` : '',
     result.completed.length ? `\n${E.check()} ${result.completed.map(q => q.name).join(', ')}` : '',
     result.failed.length ? `\n${E.cross()} ${result.failed.length} failed` : '',
+    result.skipped.length
+      ? `\n${E.warn()} Skipped: ${result.skipped.map(s => `${s.quest.name} (${s.reason})`).join(', ')}`
+      : '',
+    result.needsClaim.some(q => q.claimError === 'captcha')
+      ? `\n\n${E.warn()} Discord requires a captcha to claim. Tap **Claim** on the quest in Discord to collect your orbs.`
+      : '',
   ].join('');
 
   return ix.editReply({ embeds: [ok('Complete', lines)] });
@@ -69,6 +80,8 @@ export const commands = [
       .addStringOption(o => o.setName('label').setDescription('Token label')))
     .addSubcommand(s => s.setName('info').setDescription('Quest details')
       .addStringOption(o => o.setName('name').setDescription('Quest name').setRequired(true))
+      .addStringOption(o => o.setName('label').setDescription('Token label')))
+    .addSubcommand(s => s.setName('accept').setDescription('Auto-accept every available quest')
       .addStringOption(o => o.setName('label').setDescription('Token label')))
     .addSubcommand(s => s.setName('all').setDescription('Complete all at once')
       .addStringOption(o => o.setName('label').setDescription('Token label')))
@@ -122,6 +135,31 @@ export const handlers = {
       });
     }
 
+    if (sub === 'accept') {
+      await ix.deferReply();
+      const c = await ctx(ix, label);
+      if (c.error) return ix.editReply({ embeds: [warn('No Token', `${E.key()} \`/token add\``)] });
+
+      const engine = new QuestEngine(c.token);
+      const quests = filterRunnableQuests(await engine.fetchQuests());
+      const pending = quests.filter(q => !q.enrolled);
+
+      if (!pending.length) {
+        return ix.editReply({ embeds: [ui('All Accepted', `${E.check()} All **${quests.length}** active quest(s) are already accepted.`)] });
+      }
+
+      await ix.editReply({ embeds: [ui('Accepting', `${E.key()} Joining **${pending.length}** quest(s)…`)] });
+      const { accepted, failed } = await engine.enrollAll(quests);
+
+      return ix.editReply({
+        embeds: [ok('Accepted', [
+          `${E.check()} Joined **${accepted.length}/${pending.length}** quest(s)`,
+          accepted.length ? `\n${accepted.map(q => `• ${q.name}`).join('\n')}` : '',
+          failed.length ? `\n\n${E.cross()} ${failed.length} could not be joined` : '',
+        ].join(''))],
+      });
+    }
+
     if (sub === 'all') { await ix.deferReply(); return runMode(ix, {}); }
     if (sub === 'run') { await ix.deferReply(); return runMode(ix, { sequential: true }); }
     if (sub === 'turbo') { await ix.deferReply(); return runMode(ix, { turbo: true }); }
@@ -155,10 +193,19 @@ export const handlers = {
       if (!claimable.length) return ix.editReply({ embeds: [ui('Nothing', 'No rewards to claim.')] });
 
       let n = 0;
+      let captcha = false;
       for (const q of claimable) {
-        try { await api.claimReward(q.id); n++; } catch { /* captcha */ }
+        try { await api.claimReward(q.id); n++; }
+        catch (e) { if (e.body?.captcha_service) captcha = true; }
       }
-      return ix.editReply({ embeds: [ok('Claimed', `${E.loot()} **${n}/${claimable.length}** rewards.`)] });
+
+      const body = captcha
+        ? `${E.warn()} Discord now requires a captcha to claim rewards, so this can't be done through the API.`
+          + `\n\n${E.loot()} Your **${claimable.length}** completed quest(s) are waiting — open **Discover → Quests**`
+          + ` in Discord and tap **Claim** to collect the orbs.`
+        : `${E.loot()} Claimed **${n}/${claimable.length}** rewards.`;
+
+      return ix.editReply({ embeds: [captcha ? warn('Claim Manually', body) : ok('Claimed', body)] });
     }
   },
 };

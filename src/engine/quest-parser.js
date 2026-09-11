@@ -7,6 +7,10 @@ export const SUPPORTED_TASKS = [
 
 const CONSOLE = new Set(['PLAY_ON_XBOX', 'PLAY_ON_PLAYSTATION']);
 
+// Achievement tasks are only credited by an event from the activity's own
+// backend, which the quest API rejects with a 403, so they need a real play.
+const MANUAL = new Set(['ACHIEVEMENT_IN_ACTIVITY', 'ACHIEVEMENT_IN_GAME']);
+
 function pick(obj, ...keys) {
   for (const k of keys) if (obj?.[k] != null) return obj[k];
   return null;
@@ -118,7 +122,9 @@ export function parseQuest(raw) {
     enrolledAt,
     orbReward,
     isExpired,
-    automatable: !CONSOLE.has(taskName),
+    automatable: !CONSOLE.has(taskName) && !MANUAL.has(taskName),
+    manualReason: CONSOLE.has(taskName) ? 'console only'
+      : MANUAL.has(taskName) ? 'needs an in-game achievement' : null,
     configVersion: config.config_version || config.configVersion || 2,
     trafficSealed: raw.traffic_metadata_sealed || raw.trafficMetadataSealed || null,
     raw,

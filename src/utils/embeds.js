@@ -33,6 +33,7 @@ export function fmtSec(s) {
 
 function statusTag(q) {
   if (q.completed) return `${E.check()} Done`;
+  if (!q.automatable) return `${E.warn()} Manual`;
   if (q.enrolled) return `${E.bolt()} Active`;
   return `${E.spark()} New`;
 }
@@ -48,13 +49,10 @@ export function questLine(q, i) {
 export function questListEmbed(quests, diag = null) {
   if (!quests.length) {
     const lines = [
-      `${E.warn()} No quests detected.`,
+      `${E.warn()} No active quests on this account right now.`,
       '',
-      '**Setup:**',
-      `1. ${E.key()} \`/token add\` — your **user** token (not bot token)`,
-      `2. Open Discord → **Discover → Quests**`,
-      `3. **Accept** a quest`,
-      `4. ${E.radar()} \`/quests list\` again`,
+      `${E.key()} Make sure \`/token add\` used your **user** token — a bot token always sees zero quests.`,
+      `${E.radar()} You don't need to accept anything first; \`/quests all\` joins them for you.`,
     ];
     if (diag) {
       lines.push('', '**API scan:**', `\`@me\` → ${diag.enrolled ?? '?'} · excluded → ${diag.excluded ?? '?'}`);
@@ -84,7 +82,9 @@ export function statusEmbed(tasks, msg) {
   if (tasks?.length) {
     const lines = tasks.map(t => {
       const pct = t.max ? Math.round((t.cur / t.max) * 100) : 0;
-      const icon = t.status === 'DONE' ? E.check() : t.status === 'FAILED' ? E.cross() : E.bolt();
+      const icon = t.status === 'DONE' ? E.check()
+        : t.status === 'FAILED' ? E.cross()
+          : t.status === 'SKIPPED' ? E.warn() : E.bolt();
       return `${icon} **${t.name}**\n${bar(pct)} \`${pct}%\``;
     });
     e.addFields({ name: `${E.rocket()} Progress`, value: lines.join('\n\n') });
@@ -98,8 +98,8 @@ export function helpEmbed() {
     '`/token add` · `/token check` · `/token list` · `/token remove`',
     '',
     `${E.radar()} **Quests**`,
-    '`/quests list` · `/quests all` · `/quests run` · `/quests turbo`',
-    '`/quests stop` · `/quests status` · `/quests claim` · `/quests info`',
+    '`/quests list` · `/quests accept` · `/quests all` · `/quests run`',
+    '`/quests turbo` · `/quests stop` · `/quests status` · `/quests claim` · `/quests info`',
     '',
     `${E.gem()} **Settings**`,
     '`/settings view` · `/settings turbo` · `/settings claim` · `/settings enroll`',
