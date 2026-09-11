@@ -1,27 +1,34 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { buildHelpEmbeds } from '../utils/help-content.js';
-import { helpButtons } from '../utils/embeds.js';
-import { withBrand } from '../utils/reply.js';
+import { embed } from '../utils/embeds.js';
 
-async function sendHelp(interaction) {
-  const embeds = buildHelpEmbeds();
-  return interaction.reply(withBrand({
-    embeds,
-    components: [helpButtons()],
-  }));
-}
+const HELP = `**Token**
+\`/token add\` · save token
+\`/token check\` · verify token
+\`/token list\` · list tokens
+\`/token remove\` · delete token
+
+**Quests**
+\`/quests list\` · show quests
+\`/quests all\` · complete all at once
+\`/quests run\` · complete one by one
+\`/quests turbo\` · fast mode (~1min)
+\`/quests stop\` · abort run
+\`/quests status\` · check progress
+\`/quests claim\` · claim rewards
+\`/quests info\` · quest details
+
+**Settings**
+\`/settings view\` · show settings
+\`/settings turbo\` · toggle turbo
+\`/settings claim\` · toggle auto-claim
+\`/settings enroll\` · toggle auto-enroll`;
 
 export const commands = [
   new SlashCommandBuilder()
     .setName('help')
-    .setDescription('Show all Orbweaver commands and quick-start guide'),
-
-  new SlashCommandBuilder()
-    .setName('oracle')
-    .setDescription('Orbweaver help & command reference (alias for /help)'),
+    .setDescription('Show all commands'),
 ];
 
 export const handlers = {
-  help: sendHelp,
-  oracle: sendHelp,
+  help: async (ix) => ix.reply({ embeds: [embed('Commands', HELP)] }),
 };

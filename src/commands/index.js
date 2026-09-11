@@ -1,19 +1,19 @@
 import * as token from './token.js';
-import * as quest from './quest.js';
+import * as quests from './quests.js';
 import * as settings from './settings.js';
 import * as help from './help.js';
 
 export const commands = [
   ...token.commands,
-  ...quest.commands,
+  ...quests.commands,
   ...settings.commands,
   ...help.commands,
 ];
 
 export const handlers = new Map();
 
-for (const cmd of [token, quest, settings, help]) {
-  for (const [name, handler] of Object.entries(cmd.handlers)) {
+for (const mod of [token, quests, settings, help]) {
+  for (const [name, handler] of Object.entries(mod.handlers)) {
     handlers.set(name, handler);
   }
 }

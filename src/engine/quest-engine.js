@@ -1,39 +1,26 @@
 import { DiscordUserAPI } from './discord-api.js';
-import { parseQuest, sortQuests, filterActiveQuests } from './quest-parser.js';
+import { parseQuest, sortQuests, filterRunnableQuests } from './quest-parser.js';
 import { config } from '../config.js';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const rnd = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 
 const activeRuns = new Map();
 
-export function getRunState(userId) {
-  return activeRuns.get(userId) || null;
-}
+export function getRunState(userId) { return activeRuns.get(userId) || null; }
 
 export function abortRun(userId) {
   const run = activeRuns.get(userId);
-  if (run) {
-    run.aborted = true;
-    return true;
-  }
+  if (run) { run.aborted = true; return true; }
   return false;
-}
-
-function buildStreamKey(guildId, channelId, userId) {
-  return `call:${guildId}:${channelId}:${userId}`;
 }
 
 export class QuestEngine {
   constructor(token, options = {}) {
     this.api = new DiscordUserAPI(token);
     this.options = {
-      turbo: false,
-      autoEnroll: true,
-      autoClaim: true,
-      mode: 'parallel',
-      sort: 'default',
-      onProgress: null,
+      turbo: false, autoEnroll: true, autoClaim: true,
+      mode: 'parallel', sort: 'default', onProgress: null,
       ...options,
     };
     this.aborted = false;
@@ -42,10 +29,10 @@ export class QuestEngine {
   }
 
   updateProgress(task) {
-    const existing = this.tasks.find(t => t.id === task.id);
-    if (existing) Object.assign(existing, task);
+    const t = this.tasks.find(x => x.id === task.id);
+    if (t) Object.assign(t, task);
     else this.tasks.push(task);
-    this.options.onProgress?.(this.tasks, this.message);
+    this.options.onProgress?.(this.tasks);
   }
 
   async fetchQuests() {
@@ -55,24 +42,22 @@ export class QuestEngine {
 
   async run(quests, userId) {
     this.userId = userId;
-    const run = { aborted: false, engine: this };
+    const run = { aborted: false };
     activeRuns.set(userId, run);
 
-    const active = filterActiveQuests(sortQuests(quests, this.options.sort));
-    this.message = `Weaving ${active.length} quest${active.length === 1 ? '' : 's'}…`;
+    const active = filterRunnableQuests(sortQuests(quests, this.options.sort));
+    const results = { completed: [], failed: [], skipped: [] };
 
     if (!active.length) {
       activeRuns.delete(userId);
-      return { completed: [], failed: [], skipped: [], message: 'Nothing to weave — all quests are done or unsupported.' };
+      return { ...results, message: 'No quests found.', tasks: [] };
     }
-
-    const results = { completed: [], failed: [], skipped: [] };
 
     try {
       if (this.options.mode === 'sequential') {
-        for (const quest of active) {
+        for (const q of active) {
           if (run.aborted) break;
-          await this.runQuest(quest, results);
+          await this.runQuest(q, results);
         }
       } else {
         await Promise.allSettled(active.map(q => this.runQuest(q, results)));
@@ -83,7 +68,7 @@ export class QuestEngine {
 
     return {
       ...results,
-      message: `Finished: ${results.completed.length} done, ${results.failed.length} failed, ${results.skipped.length} skipped.`,
+      message: `Done: ${results.completed.length} ok, ${results.failed.length} failed`,
       tasks: this.tasks,
     };
   }
@@ -92,61 +77,39 @@ export class QuestEngine {
     if (this.aborted || activeRuns.get(this.userId)?.aborted) return;
 
     this.updateProgress({
-      id: quest.id,
-      name: quest.name,
-      cur: quest.progress,
-      max: quest.taskInfo.target,
-      status: 'RUNNING',
+      id: quest.id, name: quest.name,
+      cur: quest.progress, max: quest.taskInfo.target, status: 'RUNNING',
     });
 
     try {
       if (!quest.enrolled && this.options.autoEnroll) {
         await this.api.enrollQuest(quest.id, quest.trafficSealed);
-        await sleep(rnd(500, 1200));
+        await sleep(rnd(800, 1500));
+        const fresh = await this.api.getQuests();
+        const updated = fresh.map(parseQuest).find(q => q?.id === quest.id);
+        if (updated) Object.assign(quest, updated);
       }
 
       const type = quest.taskInfo.normalized;
       let ok = false;
 
-      switch (type) {
-        case 'VIDEO':
-          ok = await this.completeVideo(quest);
-          break;
-        case 'ACTIVITY':
-          ok = await this.completeActivity(quest);
-          break;
-        case 'ACHIEVEMENT':
-          ok = await this.completeAchievement(quest);
-          break;
-        case 'GAME':
-        case 'STREAM':
-          ok = await this.completeHeartbeat(quest, type);
-          break;
-        default:
-          results.skipped.push({ quest, reason: 'Unsupported quest type' });
-          this.updateProgress({ id: quest.id, name: quest.name, status: 'SKIPPED' });
-          return;
+      if (type === 'VIDEO') ok = await this.completeVideo(quest);
+      else if (type === 'ACTIVITY') ok = await this.completeActivity(quest);
+      else if (type === 'ACHIEVEMENT') ok = await this.completeAchievement(quest);
+      else if (type === 'GAME' || type === 'STREAM') ok = await this.completeGameOrStream(quest, type);
+      else {
+        results.skipped.push({ quest, reason: 'unsupported' });
+        return;
       }
 
       if (ok) {
         results.completed.push(quest);
-        this.updateProgress({
-          id: quest.id,
-          name: quest.name,
-          cur: quest.taskInfo.target,
-          max: quest.taskInfo.target,
-          status: 'COMPLETED',
-        });
-
+        this.updateProgress({ id: quest.id, name: quest.name, cur: quest.taskInfo.target, max: quest.taskInfo.target, status: 'DONE' });
         if (this.options.autoClaim) {
-          try {
-            await sleep(rnd(1500, 3000));
-            await this.api.claimReward(quest.id);
-            this.updateProgress({ id: quest.id, name: quest.name, status: 'CLAIMED' });
-          } catch { /* captcha or already claimed */ }
+          try { await sleep(2000); await this.api.claimReward(quest.id); } catch { /* captcha */ }
         }
       } else {
-        results.failed.push({ quest, reason: 'Completion failed' });
+        results.failed.push({ quest, reason: 'failed' });
         this.updateProgress({ id: quest.id, name: quest.name, status: 'FAILED' });
       }
     } catch (err) {
@@ -158,150 +121,118 @@ export class QuestEngine {
   async completeVideo(quest) {
     const target = quest.taskInfo.target;
     const key = quest.taskKey;
-    let cur = quest.progress;
-    const enrolledAt = new Date(quest.raw.user_status?.enrolledAt || Date.now()).getTime();
-    const turbo = this.options.turbo;
-    const multiplier = turbo ? config.turboMultiplier : 1;
-    const maxFuture = turbo ? 30 : 10;
-    const speed = turbo ? Math.max(target / 60, 7) : 7;
-    const interval = turbo ? 200 : 1000;
-    let failCount = 0;
+    let done = quest.progress;
+    const enrolledAt = new Date(quest.enrolledAt || Date.now()).getTime();
+    const speed = this.options.turbo ? Math.max(7, Math.ceil(target / 60)) : 7;
 
-    while (cur < target && !this.aborted) {
-      const maxAllowed = Math.floor((Date.now() - enrolledAt) / 1000) + maxFuture;
-      const diff = maxAllowed - cur;
-      const timestamp = cur + speed * multiplier;
+    while (done < target && !this.aborted) {
+      const step = Math.min(speed, target - done);
+      await sleep(this.options.turbo ? 200 : step * 1000);
 
-      if (diff >= speed || turbo) {
+      const maxAllowed = Math.floor((Date.now() - enrolledAt) / 1000) + (this.options.turbo ? 30 : 10);
+      const timestamp = Math.min(target, done + speed);
+
+      if (maxAllowed >= done || this.options.turbo) {
         try {
-          const res = await this.api.sendVideoProgress(
-            quest.id,
-            Number(Math.min(target, timestamp + Math.random()).toFixed(6)),
-          );
-          cur = Math.min(target, timestamp);
-          const serverVal = res?.progress?.[key]?.value ?? res?.progress?.WATCH_VIDEO?.value;
-          if (serverVal > cur) cur = Math.min(target, serverVal);
-          if (res?.completed_at) return true;
-          failCount = 0;
-        } catch (err) {
-          failCount++;
-          if (err.status === 400 || err.status === 403 || err.status === 404) return false;
-          if (failCount >= 5) return false;
+          const res = await this.api.sendVideoProgress(quest.id, Number((timestamp + Math.random()).toFixed(6)));
+          done = Math.min(target, timestamp);
+          const sv = res?.progress?.[key]?.value ?? res?.progress?.WATCH_VIDEO?.value;
+          if (sv > done) done = Math.min(target, sv);
+          if (res?.completed_at || res?.completedAt) return true;
+        } catch (e) {
+          if (e.status >= 400 && e.status < 500) return false;
         }
       }
 
-      this.updateProgress({ id: quest.id, name: quest.name, cur, max: target, status: 'RUNNING' });
-      if (cur >= target) break;
-      await sleep(turbo ? interval : rnd(7000, 9500));
+      this.updateProgress({ id: quest.id, name: quest.name, cur: done, max: target, status: 'RUNNING' });
     }
 
-    if (cur < target) {
-      try {
-        await this.api.sendVideoProgress(quest.id, target);
-      } catch { return false; }
-    }
-    return true;
+    try {
+      await this.api.sendVideoProgress(quest.id, target);
+      return true;
+    } catch { return done >= target; }
   }
 
-  async completeHeartbeat(quest, type) {
+  async completeGameOrStream(quest, type) {
     const target = quest.taskInfo.target;
     const appId = quest.taskInfo.appId;
     let cur = quest.progress;
-    const turbo = this.options.turbo;
-    const beatInterval = turbo ? 2000 : rnd(28000, 32000);
-    let failCount = 0;
-    let stalled = 0;
+    const interval = this.options.turbo ? 3000 : rnd(28000, 32000);
 
-    let streamKey = null;
-    if (type === 'STREAM' || type === 'ACTIVITY') {
-      const me = await this.api.getCurrentUser();
-      const voice = await this.api.getVoiceChannels();
-      if (voice) {
-        streamKey = buildStreamKey(voice.guildId, voice.channelId, me.id);
-      } else if (type === 'ACTIVITY') {
-        return false;
-      }
+    let beat = await this.api.getGameHeartbeatPayload(appId);
+
+    if (type === 'STREAM') {
+      const streamKey = await this.api.getActivityStreamKey();
+      beat = { ...beat, stream_key: streamKey };
     }
 
-    const beat = {
-      application_id: String(appId || ''),
-      terminal: false,
-      ...(streamKey ? { stream_key: streamKey } : {}),
-    };
-
+    let fails = 0;
     while (cur < target && !this.aborted) {
       try {
-        const res = await this.api.sendHeartbeat(quest.id, beat);
-        const reported = res?.progress?.[quest.taskKey]?.value
+        const res = await this.api.sendHeartbeat(quest.id, { ...beat, terminal: false });
+        const key = quest.taskKey;
+        const reported = res?.progress?.[key]?.value
           ?? res?.progress?.[quest.taskInfo.type]?.value;
-        if (typeof reported === 'number') {
-          cur = reported;
-          stalled = 0;
-        } else {
-          stalled++;
-          if (turbo) cur += Math.min(120, target - cur);
-          if (stalled >= 5 && !turbo) return false;
-        }
+        if (typeof reported === 'number') cur = reported;
+        else if (this.options.turbo) cur = Math.min(target, cur + 30);
 
         this.updateProgress({ id: quest.id, name: quest.name, cur, max: target, status: 'RUNNING' });
-        failCount = 0;
+        fails = 0;
 
         if (cur >= target) {
-          try {
-            await this.api.sendHeartbeat(quest.id, { ...beat, terminal: true });
-          } catch { /* non-fatal */ }
+          await this.api.sendHeartbeat(quest.id, { ...beat, terminal: true }).catch(() => {});
           return true;
         }
-      } catch (err) {
-        failCount++;
-        if (err.status === 401 || err.status === 403) return false;
-        if (failCount >= 5) return false;
+      } catch (e) {
+        fails++;
+        if (e.status === 401 || fails >= 5) return false;
       }
-      await sleep(beatInterval);
+      await sleep(interval);
     }
     return cur >= target;
   }
 
   async completeActivity(quest) {
-    return this.completeHeartbeat(quest, 'ACTIVITY');
+    const target = quest.taskInfo.target;
+    const streamKey = await this.api.getActivityStreamKey();
+    let cur = quest.progress;
+    const interval = this.options.turbo ? 2000 : 20000;
+
+    while (cur < target && !this.aborted) {
+      try {
+        const res = await this.api.sendHeartbeat(quest.id, { stream_key: streamKey, terminal: false });
+        cur = res?.progress?.PLAY_ACTIVITY?.value ?? res?.progress?.[quest.taskKey]?.value ?? cur;
+        this.updateProgress({ id: quest.id, name: quest.name, cur, max: target, status: 'RUNNING' });
+        if (cur >= target) {
+          await this.api.sendHeartbeat(quest.id, { stream_key: streamKey, terminal: true }).catch(() => {});
+          return true;
+        }
+      } catch { return false; }
+      await sleep(interval);
+    }
+    return false;
   }
 
   async completeAchievement(quest) {
     const target = quest.taskInfo.target || 1;
-    const appId = quest.taskInfo.appId;
-    let cur = 0;
-    let failCount = 0;
-
-    const me = await this.api.getCurrentUser();
-    const voice = await this.api.getVoiceChannels();
-    const streamKey = voice
-      ? buildStreamKey(voice.guildId, voice.channelId, me.id)
-      : `activity:${appId}`;
-
+    const streamKey = await this.api.getActivityStreamKey();
     const beat = {
       stream_key: streamKey,
-      application_id: String(appId || ''),
+      application_id: String(quest.taskInfo.appId || ''),
       terminal: false,
     };
+    let cur = 0;
 
-    while (cur < target && !this.aborted) {
+    for (let i = 0; i < 10 && cur < target && !this.aborted; i++) {
       try {
         const res = await this.api.sendHeartbeat(quest.id, beat);
-        cur = res?.progress?.[quest.taskKey]?.value
-          ?? res?.progress?.ACHIEVEMENT_IN_ACTIVITY?.value
-          ?? cur + 1;
-        failCount = 0;
+        cur = res?.progress?.ACHIEVEMENT_IN_ACTIVITY?.value ?? res?.progress?.[quest.taskKey]?.value ?? cur + 1;
         if (cur >= target) {
-          try {
-            await this.api.sendHeartbeat(quest.id, { ...beat, terminal: true });
-          } catch { /* non-fatal */ }
+          await this.api.sendHeartbeat(quest.id, { ...beat, terminal: true }).catch(() => {});
           return true;
         }
-      } catch {
-        failCount++;
-        if (failCount >= 3) return false;
-      }
-      await sleep(this.options.turbo ? 1000 : rnd(19000, 22000));
+      } catch { /* try next */ }
+      await sleep(this.options.turbo ? 1000 : 20000);
     }
     return false;
   }

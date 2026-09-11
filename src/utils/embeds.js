@@ -1,127 +1,56 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { EmbedBuilder } from 'discord.js';
 import { config } from '../config.js';
-import { E, eObj, eUrl, taskIcon } from './emojis.js';
 
 const { brand } = config;
 
-export { E };
-
-function authorIcon() {
-  return eUrl('spider') || 'attachment://orbweaver-logo.png';
-}
-
-export function baseEmbed(title, description) {
+export function embed(title, desc, color = brand.color) {
   return new EmbedBuilder()
-    .setColor(brand.color)
-    .setAuthor({
-      name: brand.name,
-      iconURL: authorIcon(),
-    })
-    .setTitle(`${E.spider()} ${title}`)
-    .setDescription(description)
-    .setFooter({ text: brand.tagline, iconURL: eUrl('weave') })
+    .setColor(color)
+    .setTitle(title)
+    .setDescription(desc)
+    .setFooter({ text: brand.name })
     .setTimestamp();
 }
 
-export function successEmbed(title, description) {
-  return baseEmbed(title, description).setColor(brand.success).setThumbnail(eUrl('check'));
+export function ok(title, desc) { return embed(title, desc, brand.success); }
+export function warn(title, desc) { return embed(title, desc, brand.warn); }
+export function err(title, desc) { return embed(title, desc, brand.error); }
+
+export function bar(pct) {
+  const n = Math.round(pct / 10);
+  return '█'.repeat(n) + '░'.repeat(10 - n);
 }
 
-export function warnEmbed(title, description) {
-  return baseEmbed(title, description).setColor(brand.warn).setThumbnail(eUrl('warning'));
+export function fmtSec(s) {
+  if (!s) return '0s';
+  const m = Math.floor(s / 60);
+  return m ? `${m}m ${s % 60}s` : `${s}s`;
 }
 
-export function errorEmbed(title, description) {
-  return baseEmbed(title, description).setColor(brand.error).setThumbnail(eUrl('skull'));
+export function questLine(q, i) {
+  const pct = q.taskInfo?.target ? Math.min(100, Math.round((q.progress / q.taskInfo.target) * 100)) : 0;
+  const st = q.completed ? 'done' : q.enrolled ? `${pct}%` : 'new';
+  const orbs = q.orbReward ? ` · ${q.orbReward} orbs` : '';
+  return `\`${i + 1}.\` **${q.name}** — ${st} · \`${q.taskInfo.type}\`${orbs}`;
 }
 
-export function questCard(quest, index) {
-  const task = quest.taskInfo;
-  const progress = quest.progress;
-  const pct = task?.target ? Math.min(100, Math.round((progress / task.target) * 100)) : 0;
-  const bar = progressBar(pct);
-  const orbs = quest.orbReward ? `${E.orb()} **${quest.orbReward}** Orbs` : `${E.gem()} Collectible`;
-  const status = quest.completed
-    ? `${E.check()} Done`
-    : quest.enrolled
-      ? `${E.clock()} ${formatDuration(progress)}/${formatDuration(task?.target || 0)}`
-      : `${E.spark()} Not enrolled`;
+export function questListEmbed(quests) {
+  if (!quests.length) return embed('Quests', 'No quests found. Check the Quests tab in Discord and accept one first.');
 
-  return `**${index + 1}. ${quest.name}**\n${bar} \`${pct}%\` · ${status}\n${taskIcon(task?.type)} \`${task?.type || 'UNKNOWN'}\` · ${orbs}`;
+  const lines = quests.slice(0, 15).map((q, i) => questLine(q, i));
+  const extra = quests.length > 15 ? `\n_+${quests.length - 15} more_` : '';
+
+  return embed('Quests', `${quests.length} found\n\n${lines.join('\n')}${extra}`);
 }
 
-export function progressBar(pct) {
-  const filled = Math.round(pct / 10);
-  return '▰'.repeat(filled) + '▱'.repeat(10 - filled);
-}
-
-export function formatDuration(seconds) {
-  if (!seconds) return '0s';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
-}
-
-export function buildQuestListEmbed(quests, title = 'Quest Radar') {
-  const embed = baseEmbed(title, quests.length
-    ? `Found **${quests.length}** active quest${quests.length === 1 ? '' : 's'} on your account.`
-    : 'No active quests right now. Check back when Discord drops new ones!')
-    .setThumbnail(eUrl('radar'));
-
-  if (quests.length) {
-    const lines = quests.slice(0, 10).map((q, i) => questCard(q, i));
-    embed.addFields({ name: `${E.weave()} Active Quests`, value: lines.join('\n\n') });
-    if (quests.length > 10) {
-      embed.addFields({ name: '…', value: `_and ${quests.length - 10} more_` });
-    }
-  }
-
-  return embed;
-}
-
-export function buildRunStatusEmbed(runState) {
-  const embed = baseEmbed('Live Pulse', runState.message || 'Tracking quest completion…')
-    .setThumbnail(eUrl('bolt'));
-
-  if (runState.tasks?.length) {
-    const lines = runState.tasks.map(t => {
-      const icon = t.status === 'COMPLETED' ? E.check()
-        : t.status === 'FAILED' ? E.cross()
-          : t.status === 'RUNNING' ? E.bolt() : E.clock();
+export function statusEmbed(tasks, msg) {
+  const e = embed('Status', msg || '');
+  if (tasks?.length) {
+    const lines = tasks.map(t => {
       const pct = t.max ? Math.round((t.cur / t.max) * 100) : 0;
-      return `${icon} **${t.name}** — ${progressBar(pct)} ${pct}%`;
+      return `**${t.name}** ${bar(pct)} ${t.status}`;
     });
-    embed.addFields({ name: `${E.rocket()} Progress`, value: lines.join('\n') });
+    e.addFields({ name: 'Tasks', value: lines.join('\n') });
   }
-
-  embed.setColor(runState.done ? brand.success : brand.accent);
-  return embed;
-}
-
-function btn(customId, label, style) {
-  const b = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
-  return b;
-}
-
-export function helpButtons() {
-  const keyBtn = btn('help_tokens', 'Token Guide', ButtonStyle.Secondary);
-  const keyEmoji = eObj('key');
-  if (keyEmoji) keyBtn.setEmoji(keyEmoji);
-
-  const modeBtn = btn('help_modes', 'Run Modes', ButtonStyle.Primary);
-  const boltEmoji = eObj('bolt');
-  if (boltEmoji) modeBtn.setEmoji(boltEmoji);
-
-  const allBtn = btn('help_all', 'Full Guide', ButtonStyle.Success);
-  const webEmoji = eObj('spider-web');
-  if (webEmoji) allBtn.setEmoji(webEmoji);
-
-  const ghBtn = new ButtonBuilder()
-    .setLabel('GitHub')
-    .setStyle(ButtonStyle.Link)
-    .setURL('https://github.com/shrujan-sb/Discord-Auto-Quest');
-  const pkgEmoji = eObj('package');
-  if (pkgEmoji) ghBtn.setEmoji(pkgEmoji);
-
-  return new ActionRowBuilder().addComponents(keyBtn, modeBtn, allBtn, ghBtn);
+  return e;
 }

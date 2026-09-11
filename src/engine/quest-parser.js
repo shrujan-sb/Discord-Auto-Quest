@@ -1,123 +1,108 @@
-const VIDEO_TYPES = new Set(['WATCH_VIDEO', 'WATCH_VIDEO_ON_MOBILE']);
-const GAME_TYPES = new Set(['PLAY_ON_DESKTOP', 'PLAY_ON_DESKTOP_V2']);
-const STREAM_TYPES = new Set(['STREAM_ON_DESKTOP']);
-const ACTIVITY_TYPES = new Set(['PLAY_ACTIVITY']);
-const ACHIEVEMENT_TYPES = new Set(['ACHIEVEMENT_IN_ACTIVITY', 'ACHIEVEMENT_IN_GAME']);
-const CONSOLE_TYPES = new Set(['PLAY_ON_XBOX', 'PLAY_ON_PLAYSTATION']);
+export const SUPPORTED_TASKS = [
+  'WATCH_VIDEO', 'WATCH_VIDEO_ON_MOBILE',
+  'PLAY_ON_DESKTOP', 'PLAY_ON_DESKTOP_V2',
+  'STREAM_ON_DESKTOP', 'PLAY_ACTIVITY',
+  'ACHIEVEMENT_IN_ACTIVITY',
+];
 
-const TASK_PRIORITY = {
-  WATCH_VIDEO: 1,
-  WATCH_VIDEO_ON_MOBILE: 1,
-  PLAY_ACTIVITY: 2,
-  ACHIEVEMENT_IN_ACTIVITY: 3,
-  PLAY_ON_DESKTOP: 4,
-  PLAY_ON_DESKTOP_V2: 4,
-  STREAM_ON_DESKTOP: 5,
-  ACHIEVEMENT_IN_GAME: 99,
-};
+const CONSOLE = new Set(['PLAY_ON_XBOX', 'PLAY_ON_PLAYSTATION']);
+
+function pick(obj, ...keys) {
+  for (const k of keys) if (obj?.[k] != null) return obj[k];
+  return null;
+}
+
+function taskKeys(tasks) {
+  if (!tasks) return [];
+  if (tasks instanceof Map) return [...tasks.keys()];
+  return Object.keys(tasks);
+}
 
 function selectTaskConfig(config) {
-  const v2 = config?.task_config_v2;
-  const legacy = config?.task_config;
-  const v2Tasks = v2?.tasks ? Object.keys(v2.tasks) : [];
-  const legacyTasks = legacy?.tasks ? Object.keys(legacy.tasks) : [];
-  if (v2Tasks.length) return v2;
-  if (legacyTasks.length) return legacy;
+  const v2 = pick(config, 'task_config_v2', 'taskConfigV2');
+  const legacy = pick(config, 'task_config', 'taskConfig');
+  if (taskKeys(v2?.tasks).length) return v2;
+  if (taskKeys(legacy?.tasks).length) return legacy;
   return v2 || legacy;
 }
 
+function getUserStatus(raw) {
+  return raw.user_status || raw.userStatus || {};
+}
+
 function normalizeType(type) {
-  if (VIDEO_TYPES.has(type)) return 'VIDEO';
-  if (GAME_TYPES.has(type)) return 'GAME';
-  if (STREAM_TYPES.has(type)) return 'STREAM';
-  if (ACTIVITY_TYPES.has(type)) return 'ACTIVITY';
-  if (ACHIEVEMENT_TYPES.has(type)) return 'ACHIEVEMENT';
+  if (type?.includes('VIDEO')) return 'VIDEO';
+  if (type?.includes('PLAY_ON_DESKTOP')) return 'GAME';
+  if (type === 'STREAM_ON_DESKTOP') return 'STREAM';
+  if (type === 'PLAY_ACTIVITY') return 'ACTIVITY';
+  if (type?.includes('ACHIEVEMENT')) return 'ACHIEVEMENT';
   return 'UNKNOWN';
 }
 
 export function parseQuest(raw) {
-  const config = raw.config || {};
+  if (!raw?.config) return null;
+
+  const config = raw.config;
   const taskConfig = selectTaskConfig(config);
-  const tasks = taskConfig?.tasks || {};
-  const keys = Object.keys(tasks);
+  const tasks = taskConfig?.tasks;
+  if (!tasks) return null;
 
-  let bestKey = null;
-  let bestTask = null;
-  let bestPriority = 999;
+  const keys = taskKeys(tasks);
+  const taskName = SUPPORTED_TASKS.find(t => keys.includes(t) && !CONSOLE.has(t));
+  if (!taskName) return null;
 
-  for (const key of keys) {
-    if (CONSOLE_TYPES.has(key)) continue;
-    const task = tasks[key];
-    const prio = TASK_PRIORITY[key] ?? 50;
-    if (prio < bestPriority) {
-      bestPriority = prio;
-      bestKey = key;
-      bestTask = task;
-    }
-  }
+  const taskData = tasks instanceof Map ? tasks.get(taskName) : tasks[taskName];
+  if (!taskData?.target) return null;
 
-  if (!bestTask) return null;
+  const userStatus = getUserStatus(raw);
+  const progress = userStatus.progress?.[taskName]?.value ?? 0;
+  const enrolledAt = pick(userStatus, 'enrolled_at', 'enrolledAt');
+  const completedAt = pick(userStatus, 'completed_at', 'completedAt');
+  const claimedAt = pick(userStatus, 'claimed_at', 'claimedAt');
 
-  const appId = bestTask.applications?.[0]?.id || config.application?.id;
-  const progress = raw.user_status?.progress?.[bestKey]?.value ?? 0;
-  const completed = !!raw.user_status?.completed_at;
-  const enrolled = !!raw.user_status?.enrolled_at;
-  const claimed = !!raw.user_status?.claimed_at;
-
-  const rewards = config.rewards_config?.rewards || [];
+  const appId = config.application?.id ?? taskData.applications?.[0]?.id;
+  const rewards = config.rewards_config?.rewards || config.rewardsConfig?.rewards || [];
   const orbReward = rewards.find(r => r.type === 4)?.orb_quantity
-    || rewards.find(r => r.orb_quantity)?.orb_quantity
-    || 0;
+    || rewards.find(r => r.orb_quantity)?.orb_quantity || 0;
 
-  const expiresAt = config.expires_at;
-  const isExpired = expiresAt && new Date(expiresAt) < new Date();
+  const expiresAt = config.expires_at || config.expiresAt;
+  const isExpired = expiresAt && new Date(expiresAt) < Date.now();
 
   return {
     id: raw.id,
-    name: config.messages?.quest_name || config.application?.name || 'Unknown Quest',
-    gameTitle: config.messages?.game_title || config.application?.name,
-    taskKey: bestKey,
+    name: config.messages?.quest_name || config.messages?.questName || config.application?.name || 'Quest',
+    gameTitle: config.messages?.game_title || config.messages?.gameTitle || config.application?.name,
+    taskKey: taskName,
     taskInfo: {
-      type: bestKey,
-      normalized: normalizeType(bestKey),
-      target: bestTask.target || 0,
+      type: taskName,
+      normalized: normalizeType(taskName),
+      target: taskData.target,
       appId,
     },
     progress,
-    completed,
-    enrolled,
-    claimed,
+    completed: !!completedAt,
+    enrolled: !!enrolledAt,
+    claimed: !!claimedAt,
+    enrolledAt,
     orbReward,
     isExpired,
-    automatable: !CONSOLE_TYPES.has(bestKey) && bestKey !== 'ACHIEVEMENT_IN_GAME',
-    trafficSealed: raw.traffic_metadata_sealed || null,
-    colors: config.colors,
-    raw,
+    configVersion: config.config_version || config.configVersion || 2,
+    trafficSealed: raw.traffic_metadata_sealed || raw.trafficMetadataSealed || null,
+    raw: { ...raw, user_status: userStatus, config },
   };
 }
 
 export function sortQuests(quests, mode = 'default') {
   const copy = [...quests];
-  switch (mode) {
-    case 'orbs':
-      return copy.sort((a, b) => (b.orbReward || 0) - (a.orbReward || 0));
-    case 'heavy':
-      return copy.sort((a, b) => (b.taskInfo?.target || 0) - (a.taskInfo?.target || 0));
-    case 'light':
-      return copy.sort((a, b) => (a.taskInfo?.target || 0) - (b.taskInfo?.target || 0));
-    case 'video-first':
-      return copy.sort((a, b) => {
-        const aV = a.taskInfo?.normalized === 'VIDEO' ? 0 : 1;
-        const bV = b.taskInfo?.normalized === 'VIDEO' ? 0 : 1;
-        return aV - bV;
-      });
-    default:
-      return copy;
-  }
+  if (mode === 'orbs') return copy.sort((a, b) => (b.orbReward || 0) - (a.orbReward || 0));
+  if (mode === 'heavy') return copy.sort((a, b) => (b.taskInfo?.target || 0) - (a.taskInfo?.target || 0));
+  return copy;
 }
 
-export function filterActiveQuests(quests) {
-  return quests.filter(q =>
-    q && !q.isExpired && !q.completed && q.automatable && q.taskInfo?.target > 0,
-  );
+export function filterRunnableQuests(quests) {
+  return quests.filter(q => q && !q.isExpired && !q.completed);
+}
+
+export function filterEnrolledQuests(quests) {
+  return filterRunnableQuests(quests).filter(q => q.enrolled);
 }

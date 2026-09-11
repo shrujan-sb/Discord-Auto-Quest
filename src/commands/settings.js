@@ -1,63 +1,46 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { getSettings, saveSettings } from '../database/sqlite.js';
-import { successEmbed, E, progressBar } from '../utils/embeds.js';
-import { withBrand } from '../utils/reply.js';
+import { ok, embed } from '../utils/embeds.js';
 
-const onOff = (v) => v ? `${E.check()} **ON**` : `${E.cross()} **OFF**`;
+const on = v => v ? 'on' : 'off';
 
 export const commands = [
   new SlashCommandBuilder()
-    .setName('loom-config')
-    .setDescription('Configure your Orbweaver preferences')
-    .addSubcommand(sc => sc
-      .setName('view')
-      .setDescription('See current settings'))
-    .addSubcommand(sc => sc
-      .setName('turbo')
-      .setDescription('Toggle default turbo mode')
-      .addBooleanOption(o => o.setName('enabled').setDescription('Enable turbo by default').setRequired(true)))
-    .addSubcommand(sc => sc
-      .setName('auto-claim')
-      .setDescription('Toggle auto-claiming rewards')
-      .addBooleanOption(o => o.setName('enabled').setDescription('Auto-claim on completion').setRequired(true)))
-    .addSubcommand(sc => sc
-      .setName('auto-enroll')
-      .setDescription('Toggle auto-enrolling in quests')
-      .addBooleanOption(o => o.setName('enabled').setDescription('Auto-enroll before weaving').setRequired(true))),
+    .setName('settings')
+    .setDescription('Bot settings')
+    .addSubcommand(s => s.setName('view').setDescription('Show settings'))
+    .addSubcommand(s => s.setName('turbo').setDescription('Default turbo mode')
+      .addBooleanOption(o => o.setName('enabled').setRequired(true)))
+    .addSubcommand(s => s.setName('claim').setDescription('Auto-claim rewards')
+      .addBooleanOption(o => o.setName('enabled').setRequired(true)))
+    .addSubcommand(s => s.setName('enroll').setDescription('Auto-enroll quests')
+      .addBooleanOption(o => o.setName('enabled').setRequired(true))),
 ];
 
 export const handlers = {
-  'loom-config': async (interaction) => {
-    const sub = interaction.options.getSubcommand();
-    const userId = interaction.user.id;
+  settings: async (ix) => {
+    const sub = ix.options.getSubcommand();
+    const uid = ix.user.id;
 
     if (sub === 'view') {
-      const s = getSettings(userId);
-      return interaction.reply(withBrand({
-        embeds: [successEmbed('Loom Config', [
-          'Your weaving preferences:',
-          '',
-          `${E.rocket()} Turbo Mode · ${onOff(s.turbo_mode)}`,
-          `${E.loot()} Auto-Claim · ${onOff(s.auto_claim)}`,
-          `${E.spark()} Auto-Enroll · ${onOff(s.auto_enroll)}`,
-          `${E.bolt()} Default Mode · \`${s.default_mode}\``,
-          '',
-          `${progressBar(75)} _loom calibrated_`,
+      const s = getSettings(uid);
+      return ix.reply({
+        embeds: [embed('Settings', [
+          `turbo: **${on(s.turbo_mode)}**`,
+          `auto-claim: **${on(s.auto_claim)}**`,
+          `auto-enroll: **${on(s.auto_enroll)}**`,
         ].join('\n'))],
         ephemeral: true,
-      }));
+      });
     }
 
-    const enabled = interaction.options.getBoolean('enabled');
-    const key = sub === 'turbo' ? 'turbo_mode'
-      : sub === 'auto-claim' ? 'auto_claim'
-        : 'auto_enroll';
+    const enabled = ix.options.getBoolean('enabled');
+    const key = sub === 'turbo' ? 'turbo_mode' : sub === 'claim' ? 'auto_claim' : 'auto_enroll';
+    saveSettings(uid, { [key]: enabled ? 1 : 0 });
 
-    saveSettings(userId, { [key]: enabled ? 1 : 0 });
-
-    return interaction.reply(withBrand({
-      embeds: [successEmbed('Updated', `${E.check()} **${sub}** is now **${enabled ? 'ON' : 'OFF'}**.`)],
+    return ix.reply({
+      embeds: [ok('Updated', `${sub}: **${on(enabled)}**`)],
       ephemeral: true,
-    }));
+    });
   },
 };
