@@ -2,7 +2,9 @@ import { REST, Events } from 'discord.js';
 import { createBot } from './bot.js';
 import { config } from './config.js';
 import { registerCommands, syncGuildCommands } from './register-commands.js';
+import { loadEmojiMap } from './utils/emojis.js';
 
+loadEmojiMap();
 console.log('Starting…');
 
 const rest = new REST({ version: '10' }).setToken(config.botToken);

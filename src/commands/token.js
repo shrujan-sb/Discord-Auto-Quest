@@ -1,8 +1,9 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { DiscordUserAPI } from '../engine/discord-api.js';
 import { saveToken, getDecryptedToken, removeToken, listTokens } from '../database/sqlite.js';
-import { ok, warn, err } from '../utils/embeds.js';
+import { ok, warn, err, E } from '../utils/embeds.js';
 import { maskToken } from '../utils/crypto.js';
+import { parseAllQuests } from '../engine/quest-parser.js';
 
 export const commands = [
   new SlashCommandBuilder()
@@ -31,9 +32,9 @@ export const handlers = {
         const api = new DiscordUserAPI(token);
         const user = await api.getCurrentUser();
         saveToken(uid, label, token, { id: user.id, username: user.global_name || user.username });
-        return ix.editReply({ embeds: [ok('Saved', `**${user.global_name || user.username}** → \`${label}\``)] });
+        return ix.editReply({ embeds: [ok('Saved', `${E.check()} **${user.global_name || user.username}** → \`${label}\``)] });
       } catch {
-        return ix.editReply({ embeds: [err('Invalid', 'Token failed auth check.')] });
+        return ix.editReply({ embeds: [err('Invalid', `${E.cross()} Token failed auth.`)] });
       }
     }
 
@@ -41,7 +42,7 @@ export const handlers = {
       const label = ix.options.getString('label');
       const removed = removeToken(uid, label);
       return ix.reply({
-        embeds: [removed ? ok('Removed', `\`${label}\``) : warn('Not found', `\`${label}\``)],
+        embeds: [removed ? ok('Removed', `${E.check()} \`${label}\``) : warn('Not found', `\`${label}\``)],
         ephemeral: true,
       });
     }
@@ -50,25 +51,29 @@ export const handlers = {
       await ix.deferReply({ ephemeral: true });
       const label = ix.options.getString('label') || 'main';
       const token = getDecryptedToken(uid, label) || getDecryptedToken(uid, 'default');
-      if (!token) return ix.editReply({ embeds: [warn('Missing', 'No token saved. Use `/token add`.')] });
+      if (!token) return ix.editReply({ embeds: [warn('Missing', `${E.key()} \`/token add\``)] });
 
       try {
         const api = new DiscordUserAPI(token);
         const user = await api.getCurrentUser();
-        const quests = await api.getQuests();
-        const active = quests.filter(q => !(q.user_status?.completed_at || q.userStatus?.completedAt)).length;
+        const quests = parseAllQuests(await api.fetchAllQuests());
+        const active = quests.filter(q => !q.completed).length;
         return ix.editReply({
-          embeds: [ok('Valid', `**${user.global_name || user.username}** · ${active} quests · \`${maskToken(token)}\``)],
+          embeds: [ok('Valid', [
+            `${E.check()} **${user.global_name || user.username}**`,
+            `${E.radar()} **${active}** quest(s) found`,
+            `${E.key()} \`${maskToken(token)}\``,
+          ].join('\n'))],
         });
       } catch {
-        return ix.editReply({ embeds: [err('Dead', 'Token expired or revoked.')] });
+        return ix.editReply({ embeds: [err('Dead', `${E.skull()} Token expired.`)] });
       }
     }
 
     if (sub === 'list') {
       const tokens = listTokens(uid);
-      if (!tokens.length) return ix.reply({ embeds: [warn('Empty', 'No tokens. `/token add`')], ephemeral: true });
-      const lines = tokens.map((t, i) => `\`${i + 1}.\` **${t.label}** — ${t.discord_username || '?'}`);
+      if (!tokens.length) return ix.reply({ embeds: [warn('Empty', `${E.key()} \`/token add\``)], ephemeral: true });
+      const lines = tokens.map((t, i) => `${E.key()} \`${t.label}\` — **${t.discord_username || '?'}**`);
       return ix.reply({ embeds: [ok('Tokens', lines.join('\n'))], ephemeral: true });
     }
   },

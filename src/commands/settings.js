@@ -1,8 +1,8 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { getSettings, saveSettings } from '../database/sqlite.js';
-import { ok, embed } from '../utils/embeds.js';
+import { ok, ui, E } from '../utils/embeds.js';
 
-const on = v => v ? 'on' : 'off';
+const on = v => v ? `${E.check()} on` : `${E.cross()} off`;
 
 export const commands = [
   new SlashCommandBuilder()
@@ -25,10 +25,10 @@ export const handlers = {
     if (sub === 'view') {
       const s = getSettings(uid);
       return ix.reply({
-        embeds: [embed('Settings', [
-          `turbo: **${on(s.turbo_mode)}**`,
-          `auto-claim: **${on(s.auto_claim)}**`,
-          `auto-enroll: **${on(s.auto_enroll)}**`,
+        embeds: [ui('Settings', [
+          `${E.rocket()} turbo · **${on(s.turbo_mode)}**`,
+          `${E.loot()} auto-claim · **${on(s.auto_claim)}**`,
+          `${E.spark()} auto-enroll · **${on(s.auto_enroll)}**`,
         ].join('\n'))],
         ephemeral: true,
       });
@@ -38,9 +38,6 @@ export const handlers = {
     const key = sub === 'turbo' ? 'turbo_mode' : sub === 'claim' ? 'auto_claim' : 'auto_enroll';
     saveSettings(uid, { [key]: enabled ? 1 : 0 });
 
-    return ix.reply({
-      embeds: [ok('Updated', `${sub}: **${on(enabled)}**`)],
-      ephemeral: true,
-    });
+    return ix.reply({ embeds: [ok('Updated', `${sub}: **${on(enabled)}**`)], ephemeral: true });
   },
 };

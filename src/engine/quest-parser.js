@@ -2,7 +2,7 @@ export const SUPPORTED_TASKS = [
   'WATCH_VIDEO', 'WATCH_VIDEO_ON_MOBILE',
   'PLAY_ON_DESKTOP', 'PLAY_ON_DESKTOP_V2',
   'STREAM_ON_DESKTOP', 'PLAY_ACTIVITY',
-  'ACHIEVEMENT_IN_ACTIVITY',
+  'ACHIEVEMENT_IN_ACTIVITY', 'ACHIEVEMENT_IN_GAME',
 ];
 
 const CONSOLE = new Set(['PLAY_ON_XBOX', 'PLAY_ON_PLAYSTATION']);
@@ -15,10 +15,19 @@ function pick(obj, ...keys) {
 function taskKeys(tasks) {
   if (!tasks) return [];
   if (tasks instanceof Map) return [...tasks.keys()];
+  if (Array.isArray(tasks)) return tasks.map(t => t.type || t.event_name).filter(Boolean);
   return Object.keys(tasks);
 }
 
+function getTaskData(tasks, key) {
+  if (!tasks) return null;
+  if (tasks instanceof Map) return tasks.get(key);
+  if (Array.isArray(tasks)) return tasks.find(t => (t.type || t.event_name) === key);
+  return tasks[key];
+}
+
 function selectTaskConfig(config) {
+  if (!config) return null;
   const v2 = pick(config, 'task_config_v2', 'taskConfigV2');
   const legacy = pick(config, 'task_config', 'taskConfig');
   if (taskKeys(v2?.tasks).length) return v2;
@@ -31,28 +40,47 @@ function getUserStatus(raw) {
 }
 
 function normalizeType(type) {
-  if (type?.includes('VIDEO')) return 'VIDEO';
-  if (type?.includes('PLAY_ON_DESKTOP')) return 'GAME';
+  if (!type) return 'UNKNOWN';
+  if (type.includes('VIDEO')) return 'VIDEO';
+  if (type.includes('PLAY_ON_DESKTOP')) return 'GAME';
   if (type === 'STREAM_ON_DESKTOP') return 'STREAM';
   if (type === 'PLAY_ACTIVITY') return 'ACTIVITY';
-  if (type?.includes('ACHIEVEMENT')) return 'ACHIEVEMENT';
+  if (type.includes('ACHIEVEMENT')) return 'ACHIEVEMENT';
   return 'UNKNOWN';
 }
 
-export function parseQuest(raw) {
-  if (!raw?.config) return null;
+function findTask(tasks) {
+  const keys = taskKeys(tasks);
+  for (const name of SUPPORTED_TASKS) {
+    if (keys.includes(name) && !CONSOLE.has(name)) {
+      const data = getTaskData(tasks, name);
+      if (data) return { name, data };
+    }
+  }
+  for (const key of keys) {
+    if (CONSOLE.has(key)) continue;
+    const data = getTaskData(tasks, key);
+    if (data && normalizeType(key) !== 'UNKNOWN') return { name: key, data };
+  }
+  return null;
+}
 
-  const config = raw.config;
+export function parseQuest(raw) {
+  if (!raw?.id) return null;
+
+  const config = raw.config || raw;
+  if (!config?.messages && !config?.application && !config?.task_config_v2 && !config?.taskConfigV2) return null;
+
   const taskConfig = selectTaskConfig(config);
   const tasks = taskConfig?.tasks;
   if (!tasks) return null;
 
-  const keys = taskKeys(tasks);
-  const taskName = SUPPORTED_TASKS.find(t => keys.includes(t) && !CONSOLE.has(t));
-  if (!taskName) return null;
+  const found = findTask(tasks);
+  if (!found) return null;
 
-  const taskData = tasks instanceof Map ? tasks.get(taskName) : tasks[taskName];
-  if (!taskData?.target) return null;
+  const { name: taskName, data: taskData } = found;
+  const target = taskData.target ?? taskData.duration ?? 1;
+  if (target <= 0 && taskName !== 'ACHIEVEMENT_IN_ACTIVITY') return null;
 
   const userStatus = getUserStatus(raw);
   const progress = userStatus.progress?.[taskName]?.value ?? 0;
@@ -62,21 +90,25 @@ export function parseQuest(raw) {
 
   const appId = config.application?.id ?? taskData.applications?.[0]?.id;
   const rewards = config.rewards_config?.rewards || config.rewardsConfig?.rewards || [];
-  const orbReward = rewards.find(r => r.type === 4)?.orb_quantity
-    || rewards.find(r => r.orb_quantity)?.orb_quantity || 0;
+  let orbReward = 0;
+  for (const r of rewards) {
+    if (r.orb_quantity) orbReward = Math.max(orbReward, r.orb_quantity);
+    if (r.type === 4 && r.orb_quantity) orbReward = r.orb_quantity;
+  }
 
   const expiresAt = config.expires_at || config.expiresAt;
-  const isExpired = expiresAt && new Date(expiresAt) < Date.now();
+  const isExpired = expiresAt ? new Date(expiresAt) < Date.now() : false;
 
   return {
-    id: raw.id,
-    name: config.messages?.quest_name || config.messages?.questName || config.application?.name || 'Quest',
+    id: String(raw.id),
+    name: config.messages?.quest_name || config.messages?.questName
+      || config.application?.name || `Quest ${raw.id}`,
     gameTitle: config.messages?.game_title || config.messages?.gameTitle || config.application?.name,
     taskKey: taskName,
     taskInfo: {
       type: taskName,
       normalized: normalizeType(taskName),
-      target: taskData.target,
+      target,
       appId,
     },
     progress,
@@ -86,10 +118,21 @@ export function parseQuest(raw) {
     enrolledAt,
     orbReward,
     isExpired,
+    automatable: !CONSOLE.has(taskName),
     configVersion: config.config_version || config.configVersion || 2,
     trafficSealed: raw.traffic_metadata_sealed || raw.trafficMetadataSealed || null,
-    raw: { ...raw, user_status: userStatus, config },
+    raw,
   };
+}
+
+export function parseAllQuests(rawList) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of rawList) {
+    const q = parseQuest(raw);
+    if (q && !seen.has(q.id)) { seen.add(q.id); out.push(q); }
+  }
+  return out;
 }
 
 export function sortQuests(quests, mode = 'default') {

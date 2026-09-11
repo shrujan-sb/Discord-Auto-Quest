@@ -1,5 +1,5 @@
 import { DiscordUserAPI } from './discord-api.js';
-import { parseQuest, sortQuests, filterRunnableQuests } from './quest-parser.js';
+import { parseAllQuests, sortQuests, filterRunnableQuests } from './quest-parser.js';
 import { config } from '../config.js';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -36,8 +36,8 @@ export class QuestEngine {
   }
 
   async fetchQuests() {
-    const raw = await this.api.getQuests();
-    return raw.map(parseQuest).filter(Boolean);
+    const raw = await this.api.fetchAllQuests();
+    return parseAllQuests(raw);
   }
 
   async run(quests, userId) {
@@ -50,7 +50,7 @@ export class QuestEngine {
 
     if (!active.length) {
       activeRuns.delete(userId);
-      return { ...results, message: 'No quests found.', tasks: [] };
+      return { ...results, message: 'No quests to run.', tasks: [] };
     }
 
     try {
@@ -68,7 +68,7 @@ export class QuestEngine {
 
     return {
       ...results,
-      message: `Done: ${results.completed.length} ok, ${results.failed.length} failed`,
+      message: `${E_done(results)}`,
       tasks: this.tasks,
     };
   }
@@ -85,8 +85,8 @@ export class QuestEngine {
       if (!quest.enrolled && this.options.autoEnroll) {
         await this.api.enrollQuest(quest.id, quest.trafficSealed);
         await sleep(rnd(800, 1500));
-        const fresh = await this.api.getQuests();
-        const updated = fresh.map(parseQuest).find(q => q?.id === quest.id);
+        const fresh = parseAllQuests(await this.api.fetchAllQuests());
+        const updated = fresh.find(q => q.id === quest.id);
         if (updated) Object.assign(quest, updated);
       }
 
@@ -126,8 +126,8 @@ export class QuestEngine {
     const speed = this.options.turbo ? Math.max(7, Math.ceil(target / 60)) : 7;
 
     while (done < target && !this.aborted) {
-      const step = Math.min(speed, target - done);
-      await sleep(this.options.turbo ? 200 : step * 1000);
+      const wait = this.options.turbo ? 200 : Math.min(speed, target - done) * 1000;
+      await sleep(wait);
 
       const maxAllowed = Math.floor((Date.now() - enrolledAt) / 1000) + (this.options.turbo ? 30 : 10);
       const timestamp = Math.min(target, done + speed);
@@ -147,38 +147,26 @@ export class QuestEngine {
       this.updateProgress({ id: quest.id, name: quest.name, cur: done, max: target, status: 'RUNNING' });
     }
 
-    try {
-      await this.api.sendVideoProgress(quest.id, target);
-      return true;
-    } catch { return done >= target; }
+    try { await this.api.sendVideoProgress(quest.id, target); return true; }
+    catch { return done >= target; }
   }
 
   async completeGameOrStream(quest, type) {
     const target = quest.taskInfo.target;
-    const appId = quest.taskInfo.appId;
     let cur = quest.progress;
     const interval = this.options.turbo ? 3000 : rnd(28000, 32000);
-
-    let beat = await this.api.getGameHeartbeatPayload(appId);
-
-    if (type === 'STREAM') {
-      const streamKey = await this.api.getActivityStreamKey();
-      beat = { ...beat, stream_key: streamKey };
-    }
+    let beat = await this.api.getGameHeartbeatPayload(quest.taskInfo.appId);
+    if (type === 'STREAM') beat = { ...beat, stream_key: await this.api.getActivityStreamKey() };
 
     let fails = 0;
     while (cur < target && !this.aborted) {
       try {
         const res = await this.api.sendHeartbeat(quest.id, { ...beat, terminal: false });
-        const key = quest.taskKey;
-        const reported = res?.progress?.[key]?.value
-          ?? res?.progress?.[quest.taskInfo.type]?.value;
+        const reported = res?.progress?.[quest.taskKey]?.value ?? res?.progress?.[quest.taskInfo.type]?.value;
         if (typeof reported === 'number') cur = reported;
         else if (this.options.turbo) cur = Math.min(target, cur + 30);
-
         this.updateProgress({ id: quest.id, name: quest.name, cur, max: target, status: 'RUNNING' });
         fails = 0;
-
         if (cur >= target) {
           await this.api.sendHeartbeat(quest.id, { ...beat, terminal: true }).catch(() => {});
           return true;
@@ -216,11 +204,7 @@ export class QuestEngine {
   async completeAchievement(quest) {
     const target = quest.taskInfo.target || 1;
     const streamKey = await this.api.getActivityStreamKey();
-    const beat = {
-      stream_key: streamKey,
-      application_id: String(quest.taskInfo.appId || ''),
-      terminal: false,
-    };
+    const beat = { stream_key: streamKey, application_id: String(quest.taskInfo.appId || ''), terminal: false };
     let cur = 0;
 
     for (let i = 0; i < 10 && cur < target && !this.aborted; i++) {
@@ -231,9 +215,13 @@ export class QuestEngine {
           await this.api.sendHeartbeat(quest.id, { ...beat, terminal: true }).catch(() => {});
           return true;
         }
-      } catch { /* try next */ }
+      } catch { /* retry */ }
       await sleep(this.options.turbo ? 1000 : 20000);
     }
     return false;
   }
+}
+
+function E_done(r) {
+  return `${r.completed.length} completed · ${r.failed.length} failed · ${r.skipped.length} skipped`;
 }
