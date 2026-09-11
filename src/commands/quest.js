@@ -46,7 +46,7 @@ async function runQuestMode(interaction, mode, options = {}) {
 
   if (!quests.length) {
     return interaction.editReply({
-      embeds: [baseEmbed('Clear Skies', `${E.spark} No incomplete quests to weave right now.`)],
+      embeds: [baseEmbed('Clear Skies', `${E.spark()} No incomplete quests to weave right now.`)],
       files: [logo()],
     });
   }
@@ -61,7 +61,7 @@ async function runQuestMode(interaction, mode, options = {}) {
     onProgress: async (tasks) => {
       try {
         await interaction.editReply({
-          embeds: [buildRunStatusEmbed({ tasks, message: `${E.bolt} Weaving in ${mode} mode…`, done: false })],
+          embeds: [buildRunStatusEmbed({ tasks, message: `${E.bolt()} Weaving in ${mode} mode…`, done: false })],
           files: [logo()],
         });
       } catch { /* interaction may have expired */ }
@@ -69,15 +69,15 @@ async function runQuestMode(interaction, mode, options = {}) {
   });
 
   const modeLabels = {
-    blaze: `${E.fire} Blaze — all quests at once`,
-    parade: `${E.clock} Parade — one by one`,
-    'orb-hunt': `${E.orb} Orb Hunt — richest rewards first`,
-    'heavy-lift': `${E.gem} Heavy Lift — longest quests first`,
-    turbo: `${E.rocket} Turbo — lightspeed completion`,
+    blaze: `${E.fire()} Blaze — all quests at once`,
+    parade: `${E.clock()} Parade — one by one`,
+    'orb-hunt': `${E.orb()} Orb Hunt — richest rewards first`,
+    'heavy-lift': `${E.gem()} Heavy Lift — longest quests first`,
+    turbo: `${E.rocket()} Turbo — lightspeed completion`,
   };
 
   await interaction.editReply({
-    embeds: [baseEmbed('Weaving Started', `${modeLabels[mode] || mode}\n\n${E.spider} Processing **${quests.length}** quest${quests.length === 1 ? '' : 's'}…`)],
+    embeds: [baseEmbed('Weaving Started', `${modeLabels[mode] || mode}\n\n${E.spider()} Processing **${quests.length}** quest${quests.length === 1 ? '' : 's'}…`)],
     files: [logo()],
   });
 
@@ -91,9 +91,9 @@ async function runQuestMode(interaction, mode, options = {}) {
   }
 
   const lines = [];
-  if (result.completed.length) lines.push(`${E.check} **${result.completed.length}** completed`);
-  if (result.failed.length) lines.push(`${E.cross} **${result.failed.length}** failed`);
-  if (result.skipped.length) lines.push(`${E.warn} **${result.skipped.length}** skipped`);
+  if (result.completed.length) lines.push(`${E.check()} **${result.completed.length}** completed`);
+  if (result.failed.length) lines.push(`${E.cross()} **${result.failed.length}** failed`);
+  if (result.skipped.length) lines.push(`${E.warn()} **${result.skipped.length}** skipped`);
 
   const embed = successEmbed('Weave Complete', [
     result.message,
@@ -101,7 +101,7 @@ async function runQuestMode(interaction, mode, options = {}) {
     lines.join(' · ') || 'Nothing changed.',
     '',
     result.completed.length
-      ? result.completed.map(q => `${E.orb} ${q.name}`).join('\n')
+      ? result.completed.map(q => `${E.orb()} ${q.name}`).join('\n')
       : '',
   ].filter(Boolean).join('\n'));
 
@@ -242,7 +242,7 @@ export const handlers = {
     const state = getRunState(interaction.user.id);
     if (!state) {
       return interaction.reply({
-        embeds: [baseEmbed('Idle', `${E.clock} No active weave. Start one with \`/blaze\` or \`/turbo\`.`)],
+        embeds: [baseEmbed('Idle', `${E.clock()} No active weave. Start one with \`/blaze\` or \`/turbo\`.`)],
         files: [logo()],
         ephemeral: true,
       });
@@ -250,7 +250,7 @@ export const handlers = {
 
     const tasks = state.engine?.tasks || [];
     return interaction.reply({
-      embeds: [buildRunStatusEmbed({ tasks, message: `${E.bolt} Weave in progress…`, done: false })],
+      embeds: [buildRunStatusEmbed({ tasks, message: `${E.bolt()} Weave in progress…`, done: false })],
       files: [logo()],
       ephemeral: true,
     });
@@ -259,7 +259,7 @@ export const handlers = {
   abort: async (interaction) => {
     const stopped = abortRun(interaction.user.id);
     const embed = stopped
-      ? warnEmbed('Aborted', `${E.cross} Weave stopped. Partial progress may remain.`)
+      ? warnEmbed('Aborted', `${E.cross()} Weave stopped. Partial progress may remain.`)
       : baseEmbed('Nothing Running', 'No active weave to abort.');
     return interaction.reply({ embeds: [embed], files: [logo()], ephemeral: true });
   },
@@ -294,7 +294,7 @@ export const handlers = {
     }
 
     return interaction.editReply({
-      embeds: [successEmbed('Loot Claimed', `${E.gem} Claimed **${claimed}** of **${claimable.length}** rewards.`)],
+      embeds: [successEmbed('Loot Claimed', `${E.gem()} Claimed **${claimed}** of **${claimable.length}** rewards.`)],
       files: [logo()],
     });
   },

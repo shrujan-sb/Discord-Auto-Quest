@@ -10,7 +10,7 @@ export const commands = [
 export const handlers = {
   oracle: async (interaction) => {
     const embed = baseEmbed('The Oracle Speaks', [
-      `${E.spider} **Orbweaver** weaves through Discord quests for you — fast, parallel, and from a single bot.`,
+      `${E.spider()} **Orbweaver** weaves through Discord quests for you — fast, parallel, and from a single bot.`,
       '',
       '**Token Commands**',
       '`/thread-token add` — Save your Discord token',
@@ -33,7 +33,7 @@ export const handlers = {
       '**Settings**',
       '`/loom-config view` — Your preferences',
       '',
-      `${E.warn} **Disclaimer:** Quest automation may violate Discord ToS. Use at your own risk.`,
+      `${E.warn()} **Disclaimer:** Quest automation may violate Discord ToS. Use at your own risk.`,
     ].join('\n'));
 
     return interaction.reply({ embeds: [embed], components: [helpButtons()] });

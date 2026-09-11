@@ -67,14 +67,24 @@ Generate an encryption key:
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-### 4. Deploy commands & start
+### 4. Upload custom emojis
+
+Orbweaver uses **26 colorful 3D custom emojis** (Microsoft Fluent UI Emoji pack) — not plain Discord unicode.
+
+```bash
+npm run upload-emojis
+```
+
+This uploads them to your bot application and saves IDs to `data/emoji-map.json`. Run once after setup.
+
+### 5. Deploy commands & start
 
 ```bash
 npm run deploy
 npm run dev
 ```
 
-That's it. Orbweaver is live.
+That's it. Orbweaver is live with custom emoji UI.
 
 ## Commands
 
@@ -123,6 +133,22 @@ That's it. Orbweaver is live.
 4. Click any request to `discord.com`
 5. Under **Headers**, find `Authorization` — copy the value
 6. Use `/thread-token add` in Orbweaver
+
+## Custom Emojis
+
+All emojis live in `assets/emojis/` — vibrant 3D renders, not stock Discord unicode:
+
+| Emoji | File | Used for |
+|-------|------|----------|
+| 🪙 Coin | `orb.png` | Orb rewards |
+| 🔥 Fire | `fire.png` | Blaze mode |
+| 🚀 Rocket | `rocket.png` | Turbo mode |
+| 💎 Gem | `gem.png` | Heavy lift / loot |
+| 🕸️ Web | `spider-web.png` | Branding |
+| ⚡ Bolt | `bolt.png` | Live progress |
+| …and 20 more | | Quest types, status, buttons |
+
+Source: [Microsoft Fluent UI Emoji](https://github.com/microsoft/fluentui-emoji) (MIT). See `assets/emojis/manifest.json` for the full list.
 
 ## Architecture
 

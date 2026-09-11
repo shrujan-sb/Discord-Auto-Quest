@@ -32,10 +32,10 @@ export const handlers = {
       const s = getSettings(userId);
       return interaction.reply({
         embeds: [successEmbed('Loom Config', [
-          `${E.rocket} **Turbo Mode:** ${s.turbo_mode ? 'ON' : 'OFF'}`,
-          `${E.gem} **Auto-Claim:** ${s.auto_claim ? 'ON' : 'OFF'}`,
-          `${E.spark} **Auto-Enroll:** ${s.auto_enroll ? 'ON' : 'OFF'}`,
-          `${E.bolt} **Default Mode:** \`${s.default_mode}\``,
+          `${E.rocket()} **Turbo Mode:** ${s.turbo_mode ? 'ON' : 'OFF'}`,
+          `${E.gem()} **Auto-Claim:** ${s.auto_claim ? 'ON' : 'OFF'}`,
+          `${E.spark()} **Auto-Enroll:** ${s.auto_enroll ? 'ON' : 'OFF'}`,
+          `${E.bolt()} **Default Mode:** \`${s.default_mode}\``,
         ].join('\n'))],
         ephemeral: true,
       });
@@ -49,7 +49,7 @@ export const handlers = {
     saveSettings(userId, { [key]: enabled ? 1 : 0 });
 
     return interaction.reply({
-      embeds: [successEmbed('Updated', `${E.check} **${sub}** is now **${enabled ? 'ON' : 'OFF'}**.`)],
+      embeds: [successEmbed('Updated', `${E.check()} **${sub}** is now **${enabled ? 'ON' : 'OFF'}**.`)],
       ephemeral: true,
     });
   },

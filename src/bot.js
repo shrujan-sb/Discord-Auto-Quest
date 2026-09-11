@@ -23,7 +23,7 @@ export function createBot() {
       } catch (err) {
         console.error(`Command error [${interaction.commandName}]:`, err);
         const payload = {
-          embeds: [baseEmbed('Something Snapped', `${E.cross} ${err.message || 'An unexpected error occurred.'}`)],
+          embeds: [baseEmbed('Something Snapped', `${E.cross()} ${err.message || 'An unexpected error occurred.'}`)],
           ephemeral: true,
         };
         if (interaction.deferred || interaction.replied) {
@@ -44,15 +44,15 @@ export function createBot() {
           '3. Refresh, click any request to `discord.com`',
           '4. Copy the `Authorization` header value',
           '',
-          `${E.warn} Never share your token. It's stored encrypted locally.`,
+          `${E.warn()} Never share your token. It's stored encrypted locally.`,
         ].join('\n'),
         help_modes: [
           '**Run Modes:**',
-          `${E.fire} **Blaze** — All quests run in parallel`,
-          `${E.clock} **Parade** — Sequential, one at a time`,
-          `${E.orb} **Orb Hunt** — Richest orb rewards first`,
-          `${E.gem} **Heavy Lift** — Longest quests first`,
-          `${E.rocket} **Turbo** — 15min quests in ~1min`,
+          `${E.fire()} **Blaze** — All quests run in parallel`,
+          `${E.clock()} **Parade** — Sequential, one at a time`,
+          `${E.orb()} **Orb Hunt** — Richest orb rewards first`,
+          `${E.gem()} **Heavy Lift** — Longest quests first`,
+          `${E.rocket()} **Turbo** — 15min quests in ~1min`,
         ].join('\n'),
       };
 

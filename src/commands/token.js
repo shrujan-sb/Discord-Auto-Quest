@@ -46,7 +46,7 @@ export const handlers = {
         return interaction.editReply({
           embeds: [successEmbed(
             'Token Threaded',
-            `${E.check} Account **${user.global_name || user.username}** is now woven in as \`${label}\`.\n\n${E.warn} Your token is encrypted locally in SQLite — never shared, never logged.`,
+            `${E.check()} Account **${user.global_name || user.username}** is now woven in as \`${label}\`.\n\n${E.warn()} Your token is encrypted locally in SQLite — never shared, never logged.`,
           )],
         });
       } catch {
@@ -60,7 +60,7 @@ export const handlers = {
       const label = interaction.options.getString('label');
       const removed = removeToken(userId, label);
       const embed = removed
-        ? successEmbed('Token Cut', `${E.check} \`${label}\` has been removed from the web.`)
+        ? successEmbed('Token Cut', `${E.check()} \`${label}\` has been removed from the web.`)
         : warnEmbed('Not Found', `No token labeled \`${label}\` exists.`);
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -85,7 +85,7 @@ export const handlers = {
         return interaction.editReply({
           embeds: [successEmbed(
             'Token Alive',
-            `${E.check} **${user.global_name || user.username}** is responsive.\n${E.orb} ${active} incomplete quest${active === 1 ? '' : 's'} detected.\n\`${maskToken(token)}\``,
+            `${E.check()} **${user.global_name || user.username}** is responsive.\n${E.orb()} ${active} incomplete quest${active === 1 ? '' : 's'} detected.\n\`${maskToken(token)}\``,
           )],
         });
       } catch {
