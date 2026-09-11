@@ -1,0 +1,102 @@
+const API_BASE = 'https://discord.com/api/v10';
+
+// Discord expects Electron UA for heartbeat/game quests
+const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/0.0.309 Electron/28.2.10 Chrome/120.0.6099.291 Safari/537.36';
+
+export class DiscordUserAPI {
+  constructor(token) {
+    this.token = token.replace(/^Bearer\s+/i, '').trim();
+  }
+
+  async request(method, path, body = null) {
+    const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
+    const headers = {
+      Authorization: this.token,
+      'Content-Type': 'application/json',
+      'User-Agent': DESKTOP_UA,
+      'X-Super-Properties': Buffer.from(JSON.stringify({
+        os: 'Windows',
+        browser: 'Discord Client',
+        release_channel: 'stable',
+        client_version: '0.0.309',
+        os_version: '10.0.22631',
+        os_arch: 'x64',
+        app_arch: 'x64',
+        system_locale: 'en-US',
+        client_build_number: 254573,
+        native_build_number: 48384,
+        client_event_source: null,
+      })).toString('base64'),
+    };
+
+    const opts = { method, headers };
+    if (body) opts.body = JSON.stringify(body);
+
+    const res = await fetch(url, opts);
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+
+    if (!res.ok) {
+      const err = new Error(data?.message || `HTTP ${res.status}`);
+      err.status = res.status;
+      err.body = data;
+      throw err;
+    }
+    return data;
+  }
+
+  get(path) { return this.request('GET', path); }
+  post(path, body) { return this.request('POST', path, body); }
+  del(path) { return this.request('DELETE', path); }
+
+  async getCurrentUser() {
+    return this.get('/users/@me');
+  }
+
+  async getQuests() {
+    const data = await this.get('/quests/@me');
+    return data.quests || [];
+  }
+
+  async enrollQuest(questId, trafficSealed = null) {
+    return this.post(`/quests/${questId}/enroll`, {
+      location: 11,
+      is_targeted: false,
+      metadata_sealed: null,
+      traffic_metadata_sealed: trafficSealed,
+    });
+  }
+
+  async sendVideoProgress(questId, timestamp) {
+    return this.post(`/quests/${questId}/video-progress`, { timestamp });
+  }
+
+  async sendHeartbeat(questId, payload) {
+    return this.post(`/quests/${questId}/heartbeat`, payload);
+  }
+
+  async claimReward(questId) {
+    return this.post(`/quests/${questId}/claim-reward`, {
+      location: 11,
+      platform: 0,
+    });
+  }
+
+  async getApplication(appId) {
+    const data = await this.get(`/applications/public?application_ids=${appId}`);
+    return data?.[0] || null;
+  }
+
+  async getVoiceChannels() {
+    const guilds = await this.get('/users/@me/guilds');
+    for (const guild of guilds.slice(0, 5)) {
+      try {
+        const channels = await this.get(`/guilds/${guild.id}/channels`);
+        const voice = channels.find(c => c.type === 2);
+        if (voice) return { guildId: guild.id, channelId: voice.id };
+      } catch { /* skip inaccessible guilds */ }
+    }
+    return null;
+  }
+}
